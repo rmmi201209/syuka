@@ -3,7 +3,7 @@ name: Daily Syuka Summary Scheduler
 on:
   schedule:
     # 매일 한국 시간(KST) 오전 5시 = UTC 오후 8시 (20:00)
-    - cron: '0 20 * * *'
+    - cron: '0 20,2,8,14 * * *'
   workflow_dispatch:
     inputs:
       force_video_id:
@@ -40,11 +40,12 @@ jobs:
     - name: Run check and summarize
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
       run: |
         if [ "${{ github.event.inputs.force_video_id }}" != "" ]; then
           python scripts/check_and_summarize.py --force "${{ github.event.inputs.force_video_id }}"
         else
-          python scripts/check_and_summarize.py
+          python scripts/check_and_summarize.py --hours 72
         fi
 
     - name: Send Email Notification
@@ -60,6 +61,16 @@ jobs:
         else
           python scripts/send_email.py
         fi
+
+    - name: Verify System Status
+      env:
+        YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        SMTP_SERVER: ${{ secrets.SMTP_SERVER || 'smtp.gmail.com' }}
+        SMTP_PORT: 587
+        SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+        SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
+      run: |
+        python scripts/verify_status.py
 
     - name: Commit and push changes
       run: |

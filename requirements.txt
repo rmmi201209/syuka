@@ -5,3 +5,4 @@ python-dotenv
 requests
 yt-dlp
 feedparser
+google-api-python-client

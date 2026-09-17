@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="슈카월드 방송 내용을 매일 아침 자동으로 분석하고 요약하여 아카이브해 두는 프리미엄 요약 대시보드입니다.">
+    <title>슈카월드 핵심 요약 브리핑 대시보드</title>
+    <!-- Google Fonts (Outfit & Inter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 배경 데코레이션용 빛 번짐 영역 -->
+    <div class="glow-bg">
+        <div class="glow-circle glow-1"></div>
+        <div class="glow-circle glow-2"></div>
+    </div>
+
+    <div class="container">
+        <!-- 헤더 영역 -->
+        <header class="app-header">
+            <div class="logo-area">
+                <span class="badge">AI AUTOMATION</span>
+                <h1 class="main-title">Syuka Briefing</h1>
+                <p class="subtitle">매일 오전 5시, 슈카월드의 핵심을 AI 분석 요약합니다.</p>
+            </div>
+            
+            <!-- 실시간 검색 및 필터 -->
+            <div class="search-bar-wrapper">
+                <input type="text" id="search-input" placeholder="주제, 제목, 내용으로 아카이브 검색..." aria-label="요약본 검색">
+                <div class="search-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                </div>
+            </div>
+        </header>
+
+        <!-- 메인 콘텐츠 영역 -->
+        <main class="dashboard-content">
+            <!-- 로딩 상태 인디케이터 -->
+            <div id="loading-spinner" class="status-box">
+                <div class="spinner"></div>
+                <p>요약 아카이브를 불러오는 중입니다...</p>
+            </div>
+
+            <!-- 데이터가 없을 때 표시될 빈 상태 -->
+            <div id="empty-state" class="status-box hidden">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+                <p>검색 결과에 맞는 요약본이 존재하지 않습니다.</p>
+            </div>
+
+            <!-- 최신 요약 하이라이트 (히어로 섹션) -->
+            <section id="hero-section" class="hidden">
+                <h2 class="section-title">Latest Summary</h2>
+                <div id="latest-summary-card"></div>
+            </section>
+
+            <!-- 이전 요약 목록 (아카이브 리스트) -->
+            <section id="archive-section" class="hidden">
+                <h2 class="section-title">Archive</h2>
+                <div id="archive-grid" class="summary-list"></div>
+            </section>
+        </main>
+
+        <!-- 푸터 영역 -->
+        <footer class="app-footer">
+            <p>본 시스템은 GitHub Actions 및 Gemini 2.5 Flash API를 활용하여 완전 무인으로 가동됩니다.</p>
+            <p>&copy; 2026 슈카월드 요약봇. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <!-- JS 스크립트 연결 -->
+    <script src="app.js"></script>
+</body>
+</html>

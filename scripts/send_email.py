@@ -5,177 +5,136 @@ import argparse
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.header import Header
 from datetime import datetime, timezone
 from dotenv import load_dotenv
+
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
+def safe_print(*args, **kwargs):
+    try:
+        print(*args, **kwargs)
+    except Exception:
+        try:
+            msg = " ".join(str(a) for a in args)
+            sys.stdout.buffer.write((msg + "\n").encode('utf-8', errors='replace'))
+        except Exception:
+            pass
 
 # .env 파일 로드
 load_dotenv()
 
-def send_summary_email(force=False):
-    """
-    public/data.json에서 가장 최신 요약을 읽어와 이메일로 전송합니다.
-    방금 생성된 요약(10분 이내)이거나 force=True일 때만 전송합니다.
-    """
-    data_path = os.path.abspath(os.path.join("public", "data.json"))
-    
-    if not os.path.exists(data_path):
-        print("[ERROR] Database file public/data.json not found. Cannot send email.")
-        return False
-        
-    try:
-        with open(data_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception as e:
-        print(f"[ERROR] Failed to read database file: {e}")
-        return False
-        
-    if not data:
-        print("[INFO] Database is empty. No summary to email.")
-        return False
-        
-    # 가장 최신 요약본 (배열의 맨 앞)
-    latest_item = data[0]
-    video_id = latest_item.get("id")
-    title = latest_item.get("title")
-    published = latest_item.get("published")
-    summary = latest_item.get("summary")
-    created_at_str = latest_item.get("created_at")
-    
-    if not summary:
-        print("[ERROR] Latest item does not contain summary data.")
-        return False
+def send_individual_email(server, sender_email, receiver_email, item):
+    video_id = item.get("id")
+    title = item.get("title", "유튜브 영상 요약")
+    channel_name = item.get("channel_name", "경제 브리핑")
+    badge_color = item.get("badge_color", "#4F46E5")
+    summary = item.get("summary", {})
 
-    # 시간 체크 (최근 10분 이내에 생성된 항목인지 검사)
-    if not force and created_at_str:
-        try:
-            created_at = datetime.fromisoformat(created_at_str)
-            now = datetime.now(timezone.utc)
-            time_diff = now - created_at
-            
-            # 10분(600초) 이상 지난 항목이면 메일을 발송하지 않음
-            if time_diff.total_seconds() > 600:
-                print(f"[INFO] Latest summary for '{title}' was created {time_diff.total_seconds()/60:.1f} minutes ago. Skipping email send (no new upload).")
-                return True
-        except Exception as e:
-            print(f"[WARNING] Time comparison failed, skipping email check: {e}")
-            
-    # 환경변수 로드
-    smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", 587))
-    sender_email = os.getenv("SENDER_EMAIL", "").strip()
-    sender_password = os.getenv("SENDER_PASSWORD", "").strip()
-    receiver_email = os.getenv("RECEIVER_EMAIL", "").strip()
-    
-    # 띄어쓰기 공백 제거 (앱 비밀번호의 4자리 단위 띄어쓰기 제거)
-    sender_password = sender_password.replace(" ", "")
-    
-    if not sender_email or not sender_password or not receiver_email:
-        print("[ERROR] Email SMTP configuration missing in .env file (SENDER_EMAIL, SENDER_PASSWORD, RECEIVER_EMAIL).")
-        print("[INFO] If this is running in GitHub Actions, make sure to set these in GitHub Secrets.")
-        return False
+    subject_str = f"[{channel_name}] {title}"
 
-    if sender_email == "your_gmail_username@gmail.com":
-        print("[ERROR] Default placeholder values found in .env. Please configure SMTP variables.")
-        return False
-
-    print(f"[INFO] Preparing email for video: {title}")
-
-    # HTML 메일 템플릿 작성
-    # 주제별로 챕터 목록을 HTML 문자열로 가공
+    # 챕터 목록 HTML
     chapters_html = ""
     for ch in summary.get("chapters", []):
         chapters_html += f"""
-        <div style="margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px solid #EAEAEA;">
-            <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                <span style="background-color: #4F46E5; color: #FFFFFF; font-size: 11px; font-weight: bold; padding: 3px 8px; border-radius: 4px; margin-right: 10px;">
+        <div style="margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px dashed #E5E7EB;">
+            <div style="display: flex; align-items: center; margin-bottom: 6px;">
+                <span style="background-color: {badge_color}; color: #FFFFFF; font-size: 11px; font-weight: bold; padding: 3px 8px; border-radius: 4px; margin-right: 10px;">
                     {ch.get('timeline', '00:00')}
                 </span>
-                <h3 style="margin: 0; color: #1E1B4B; font-size: 16px; font-weight: 700;">
+                <strong style="color: #1E1B4B; font-size: 15.5px;">
                     {ch.get('title', '주제')}
-                </h3>
+                </strong>
             </div>
-            <p style="margin: 0; color: #4B5563; font-size: 14px; line-height: 1.6; white-space: pre-line;">
+            <p style="margin: 0; color: #4B5563; font-size: 14px; line-height: 1.65; white-space: pre-line;">
                 {ch.get('content', '')}
             </p>
         </div>
         """
 
-    # 키워드 뱃지 HTML 가공
+    # 키워드 뱃지 HTML
     keywords_html = ""
     for kw in summary.get("keywords", []):
         keywords_html += f"""
-        <span style="display: inline-block; background-color: #EEF2F6; color: #4F46E5; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 12px; margin-right: 6px; margin-bottom: 6px;">
+        <span style="display: inline-block; background-color: #F3F4F6; color: {badge_color}; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 12px; margin-right: 6px; margin-bottom: 6px;">
             #{kw}
         </span>
         """
 
-    # 전체 HTML 이메일 본문 조립
+    # 개별 단일 영상 전용 HTML 뉴스레터 템플릿
     html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>[슈카월드] 오늘의 요약 브리핑</title>
+        <title>[{channel_name}] {title}</title>
     </head>
     <body style="margin: 0; padding: 0; background-color: #F3F4F6; font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;">
-        <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" max-width="600" style="max-width: 600px; margin: 20px auto; background-color: #FFFFFF; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden; border: 1px solid #E5E7EB;">
-            <!-- 헤더 그라디언트 영역 -->
+        <table align="center" border="0" cellpadding="0" cellspacing="0" width="100%" max-width="640" style="max-width: 640px; margin: 20px auto; background-color: #FFFFFF; border-radius: 16px; overflow: hidden; border: 1px solid #E5E7EB; box-shadow: 0 4px 12px rgba(0,0,0,0.04);">
+            <!-- 채널 맞춤형 헤더 그라데이션 -->
             <tr>
-                <td style="background: linear-gradient(135deg, #1E1B4B 0%, #4F46E5 100%); padding: 30px; text-align: center;">
-                    <span style="color: #A5B4FC; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1.5px;">DAILY SUMMARY NEWSLETTER</span>
-                    <h1 style="margin: 10px 0 0 0; color: #FFFFFF; font-size: 24px; font-weight: 800;">슈카월드 핵심 브리핑</h1>
-                    <p style="margin: 5px 0 0 0; color: #C7D2FE; font-size: 13px;">오전 5시 자동 업로드 감지 시스템</p>
+                <td style="background: linear-gradient(135deg, #0F172A 0%, {badge_color} 100%); padding: 32px 28px; text-align: center;">
+                    <span style="color: #FFFFFF; opacity: 0.85; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 2px;">
+                        {channel_name} · AI SUMMARY
+                    </span>
+                    <h1 style="margin: 10px 0 0 0; color: #FFFFFF; font-size: 22px; font-weight: 800; line-height: 1.35;">
+                        {title}
+                    </h1>
                 </td>
             </tr>
-            <!-- 본문 영역 -->
+            <!-- 본문 콘텐츠 -->
             <tr>
-                <td style="padding: 30px;">
-                    <!-- 제목 및 링크 -->
-                    <div style="margin-bottom: 25px;">
-                        <h2 style="margin: 0 0 8px 0; color: #111827; font-size: 18px; font-weight: 800; line-height: 1.4;">
-                            {title}
-                        </h2>
-                        <a href="https://www.youtube.com/watch?v={video_id}" target="_blank" style="display: inline-block; color: #4F46E5; font-size: 13px; font-weight: bold; text-decoration: none;">
-                            📺 유튜브에서 영상 보기 &rarr;
+                <td style="padding: 28px;">
+                    <!-- 바로가기 버튼 -->
+                    <div style="text-align: center; margin-bottom: 24px;">
+                        <a href="https://www.youtube.com/watch?v={video_id}" target="_blank" style="display: inline-block; background-color: {badge_color}; color: #FFFFFF; font-size: 13.5px; font-weight: bold; text-decoration: none; padding: 10px 20px; border-radius: 25px; box-shadow: 0 2px 6px rgba(0,0,0,0.1);">
+                            ▶ YouTube에서 영상 보기 &rarr;
                         </a>
                     </div>
-                    
-                    <!-- 한줄 요약 -->
-                    <div style="background-color: #EEF2F6; border-left: 4px solid #4F46E5; padding: 15px; border-radius: 4px 8px 8px 4px; margin-bottom: 25px;">
-                        <p style="margin: 0; color: #1E1B4B; font-weight: 700; font-size: 14px; line-height: 1.5;">
+
+                    <!-- 강렬한 한 줄 요약 -->
+                    <div style="background-color: #F8FAFC; border-left: 4px solid {badge_color}; padding: 16px; border-radius: 4px 8px 8px 4px; margin-bottom: 24px;">
+                        <p style="margin: 0; color: #0F172A; font-weight: 700; font-size: 14.5px; line-height: 1.55;">
                             💡 {summary.get('one_liner', '')}
                         </p>
                     </div>
 
                     <!-- 키워드 영역 -->
-                    <div style="margin-bottom: 30px;">
+                    <div style="margin-bottom: 26px;">
                         {keywords_html}
                     </div>
 
-                    <!-- 구분선 -->
-                    <hr style="border: 0; border-top: 1px solid #E5E7EB; margin-bottom: 25px;">
+                    <hr style="border: 0; border-top: 1px solid #E5E7EB; margin-bottom: 24px;">
 
-                    <!-- 세부 챕터 요약 -->
-                    <div>
-                        <h4 style="margin: 0 0 20px 0; color: #4F46E5; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">주요 내용 요약</h4>
+                    <!-- 주요 챕터 요약 -->
+                    <div style="margin-bottom: 26px;">
+                        <h3 style="margin: 0 0 16px 0; color: {badge_color}; font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">
+                            주요 핵심 내용
+                        </h3>
                         {chapters_html}
                     </div>
 
-                    <!-- 에디터 인사이트 -->
-                    <div style="background-color: #F9FAFB; border: 1px solid #F3F4F6; border-radius: 12px; padding: 20px; margin-top: 15px;">
-                        <h4 style="margin: 0 0 10px 0; color: #1E1B4B; font-size: 14px; font-weight: 800;">🔑 핵심 인사이트 & 총평</h4>
+                    <!-- 총평 및 인사이트 -->
+                    <div style="background-color: #F9FAFB; border: 1px solid #F1F5F9; border-radius: 12px; padding: 18px;">
+                        <h4 style="margin: 0 0 8px 0; color: #1E1B4B; font-size: 14px; font-weight: 800;">
+                            📌 핵심 인사이트 & 시사점
+                        </h4>
                         <p style="margin: 0; color: #4B5563; font-size: 13.5px; line-height: 1.6; white-space: pre-line;">
                             {summary.get('insights', '')}
                         </p>
                     </div>
                 </td>
             </tr>
-            <!-- 푸터 영역 -->
+            <!-- 푸터 -->
             <tr>
-                <td style="background-color: #F9FAFB; padding: 20px; text-align: center; border-top: 1px solid #E5E7EB;">
-                    <p style="margin: 0; color: #9CA3AF; font-size: 12px;">본 메일은 매일 오전 5시 슈카월드 유튜브 채널의 신규 동영상을 감지하여 발송되는 자동화 메일입니다.</p>
-                    <p style="margin: 5px 0 0 0; color: #9CA3AF; font-size: 11px;">&copy; {datetime.now().year} 슈카월드 요약 봇. All rights reserved.</p>
+                <td style="background-color: #F9FAFB; padding: 18px; text-align: center; border-top: 1px solid #E5E7EB;">
+                    <p style="margin: 0; color: #9CA3AF; font-size: 12px;">본 메일은 [{channel_name}] 신규 영상을 AI가 요약하여 개별 발송하는 안내 메일입니다.</p>
+                    <p style="margin: 4px 0 0 0; color: #9CA3AF; font-size: 11px;">&copy; {datetime.now().year} {channel_name} AI Summary Service. All rights reserved.</p>
                 </td>
             </tr>
         </table>
@@ -183,35 +142,100 @@ def send_summary_email(force=False):
     </html>
     """
 
-    from email.header import Header
-
-    # 이메일 메시지 생성
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = Header(f"[슈카월드 요약] {title}", "utf-8")
+    msg["Subject"] = Header(subject_str, "utf-8")
     msg["From"] = sender_email
     msg["To"] = receiver_email
-    
-    # HTML 본문 추가 (utf-8 명시)
     msg.attach(MIMEText(html_content, "html", "utf-8"))
 
+    server.send_message(msg)
+    safe_print(f"[SUCCESS] Individual email sent to {receiver_email} for [{channel_name}]: {title}")
+
+def send_summary_email(force=False):
+    data_path = os.path.abspath(os.path.join("public", "data.json"))
+    
+    if not os.path.exists(data_path):
+        safe_print("[ERROR] Database file public/data.json not found. Cannot send email.")
+        return False
+        
     try:
-        # SMTP 서버 연결 및 메일 발송
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls() # TLS 보안 연결 설정
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
-        server.quit()
-        print(f"[SUCCESS] Email successfully sent to {receiver_email} for video: {title}")
-        return True
+        with open(data_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"[ERROR] Failed to send email: {e}")
+        safe_print(f"[ERROR] Failed to read database file: {e}")
+        return False
+        
+    if not data:
+        safe_print("[INFO] Database is empty. No summary to email.")
         return False
 
+    target_items = []
+
+    if force:
+        # force 옵션 시 미발송 항목 전체 또는 최신 3개 항목 개별 발송
+        unsent = [item for item in data if not item.get("email_sent", False)]
+        target_items = unsent if unsent else data[:3]
+    else:
+        # 미발송(email_sent != True) 상태인 모든 신규 요약 항목 수집
+        for item in data:
+            if not item.get("email_sent", False):
+                target_items.append(item)
+
+    if not target_items:
+        safe_print("[INFO] All video summaries have already been emailed. No unsent items.")
+        return True
+
+    safe_print(f"[INFO] Found {len(target_items)} unsent video summary(ies). Sending individual emails...")
+
+    smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+    sender_email = os.getenv("SENDER_EMAIL", "").strip()
+    sender_password = os.getenv("SENDER_PASSWORD", "").strip()
+    receiver_email = os.getenv("RECEIVER_EMAIL", "").strip()
+    
+    sender_password = sender_password.replace(" ", "")
+    
+    if not sender_email or not sender_password or not receiver_email:
+        safe_print("[ERROR] Email SMTP configuration missing in .env file.")
+        return False
+
+    if sender_email == "your_gmail_username@gmail.com":
+        safe_print("[ERROR] Default placeholder values found in .env.")
+        return False
+
+    sent_count = 0
+    try:
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls()
+        server.login(sender_email, sender_password)
+
+        for item in target_items:
+            try:
+                send_individual_email(server, sender_email, receiver_email, item)
+                item["email_sent"] = True
+                sent_count += 1
+            except Exception as e:
+                safe_print(f"[ERROR] Failed to send email for video {item.get('id')}: {e}")
+
+        server.quit()
+    except Exception as e:
+        safe_print(f"[ERROR] SMTP server connection error: {e}")
+        return False
+
+    # 발송 여부(email_sent=True) 상태를 public/data.json에 업데이트 저장
+    if sent_count > 0:
+        try:
+            with open(data_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            safe_print(f"[SUCCESS] Updated public/data.json with email_sent=True for {sent_count} item(s).")
+        except Exception as e:
+            safe_print(f"[WARNING] Failed to update data.json after email send: {e}")
+
+    return True
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Send Syuka World Summary Email")
-    parser.add_argument("--force", action="store_true", help="Send email ignoring 10-minute creation window limit")
+    parser = argparse.ArgumentParser(description="Send Individual YouTube Summary Emails")
+    parser.add_argument("--force", action="store_true", help="Force send unsent or latest summary emails")
     args = parser.parse_args()
     
     success = send_summary_email(force=args.force)

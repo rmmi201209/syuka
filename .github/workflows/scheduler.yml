@@ -1,9 +1,8 @@
 name: Daily Syuka Summary Scheduler
 
 on:
-  schedule:
-    # 매일 한국 시간(KST) 오전 5시 = UTC 오후 8시 (20:00)
-    - cron: '0 20,2,8,14 * * *'
+  # schedule:
+  #   - cron: '0 20,2,8,14 * * *'
   workflow_dispatch:
     inputs:
       force_video_id:
